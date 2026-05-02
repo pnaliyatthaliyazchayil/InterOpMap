@@ -673,31 +673,32 @@ with tab2:
                 with st.spinner("Validating API key..."):
                     if not validate_api_key(api_key_vs):
                         st.error("❌ Invalid API key. Please check your UTS profile.")
-                        st.stop()
-                
-                with st.spinner("Searching UMLS…"):
-                    url = f"{UMLS_BASE}/search/current"
-                    params = {
-                        "apiKey": api_key_vs,
-                        "string": search_term,
-                        "sabs": search_vocab_code,
-                        "returnIdType": "code",
-                        "pageSize": 20,
-                    }
-                    try:
-                        resp = requests.get(url, params=params, timeout=30)
-                        if resp.status_code == 200:
-                            data = resp.json()
-                            results = data.get("result", {}).get("results", [])
-                            if results:
-                                st.session_state["search_results"] = results
-                                st.session_state["current_code"] = None  # Clear navigation
-                            else:
-                                st.info("No results found")
-                        else:
-                            st.error(f"Search failed: HTTP {resp.status_code}")
-                    except Exception as e:
-                        st.error(f"Error: {e}")
+                        # Don't stop - let the interface continue to show
+                    else:
+                        # Only search if API key is valid
+                        with st.spinner("Searching UMLS…"):
+                            url = f"{UMLS_BASE}/search/current"
+                            params = {
+                                "apiKey": api_key_vs,
+                                "string": search_term,
+                                "sabs": search_vocab_code,
+                                "returnIdType": "code",
+                                "pageSize": 20,
+                            }
+                            try:
+                                resp = requests.get(url, params=params, timeout=30)
+                                if resp.status_code == 200:
+                                    data = resp.json()
+                                    results = data.get("result", {}).get("results", [])
+                                    if results:
+                                        st.session_state["search_results"] = results
+                                        st.session_state["current_code"] = None  # Clear navigation
+                                    else:
+                                        st.info("No results found")
+                                else:
+                                    st.error(f"Search failed: HTTP {resp.status_code}")
+                            except Exception as e:
+                                st.error(f"Error: {e}")
         
         # Display search results
         if "search_results" in st.session_state and not st.session_state.get("current_code"):
