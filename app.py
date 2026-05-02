@@ -29,9 +29,9 @@ st.markdown("""
     
     .hero-banner {
         background: linear-gradient(135deg, #064e3b 0%, #047857 50%, #059669 100%);
-        border-radius: 16px;
-        padding: 2.5rem 2rem;
-        margin-bottom: 2rem;
+        border-radius: 12px;
+        padding: 1.25rem 1.5rem;
+        margin-bottom: 1.5rem;
         border: 1px solid rgba(16, 185, 129, 0.3);
         position: relative;
         overflow: hidden;
@@ -48,14 +48,14 @@ st.markdown("""
     }
     .hero-banner h1 {
         color: #ecfdf5;
-        font-size: 2rem;
+        font-size: 1.5rem;
         font-weight: 700;
-        margin: 0 0 0.5rem 0;
+        margin: 0 0 0.25rem 0;
         letter-spacing: -0.5px;
     }
     .hero-banner p {
         color: #a7f3d0;
-        font-size: 1rem;
+        font-size: 0.85rem;
         margin: 0;
         font-weight: 400;
     }
@@ -274,56 +274,6 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# Sidebar
-with st.sidebar:
-    st.markdown("### ⚙️ Configuration")
-    
-    api_key = st.text_input(
-        "UMLS API Key",
-        type="password",
-        help="Get your free API key at https://uts.nlm.nih.gov/uts/profile",
-        placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-    )
-    
-    if api_key:
-        with st.spinner("Validating key…"):
-            if validate_api_key(api_key):
-                st.success("API key valid ✓")
-            else:
-                st.error("Invalid API key. Check your UTS profile.")
-                api_key = None
-    
-    st.markdown("---")
-    
-    st.markdown("### 📖 Source Vocabulary")
-    source_label = st.selectbox(
-        "What vocabulary are your codes in?",
-        options=list(VOCAB_OPTIONS.keys()),
-        index=0,
-        help="The coding system your uploaded codes belong to"
-    )
-    source_vocab = VOCAB_OPTIONS[source_label]
-    
-    st.markdown("### 🎯 Target Vocabulary")
-    target_options = {k: v for k, v in VOCAB_OPTIONS.items() if v != source_vocab}
-    target_label = st.selectbox(
-        "What vocabulary do you want to map to?",
-        options=list(target_options.keys()),
-        index=list(target_options.keys()).index("SNOMED CT (US Edition)") 
-              if "SNOMED CT (US Edition)" in target_options else 0,
-        help="The target coding system for the crosswalk"
-    )
-    target_vocab = target_options[target_label]
-    
-    st.markdown("---")
-    st.markdown(
-        "<div style='font-size:0.75rem; color:#059669;'>"
-        "Powered by NLM UMLS REST API<br>"
-        "Free license at <a href='https://uts.nlm.nih.gov' target='_blank'>uts.nlm.nih.gov</a>"
-        "</div>",
-        unsafe_allow_html=True
-    )
-
 # Main tabs
 tab1, tab2 = st.tabs(["🔀 Crosswalk", "📋 Value Set Builder"])
 
@@ -332,225 +282,296 @@ tab1, tab2 = st.tabs(["🔀 Crosswalk", "📋 Value Set Builder"])
 # ═══════════════════════════════════════════════════════════════════════════
 
 with tab1:
+    # Remove sidebar - put everything inline
+    
     st.markdown("""
-    <div class="info-box">
-        Upload a CSV of medical codes → select the code column → map to target vocabulary → download enriched CSV
+    <div class="step-header">
+        <div class="step-number">1</div>
+        <div class="step-title">Enter API Key</div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    api_key_input = st.text_input(
+        "UMLS API Key",
+        type="password",
+        help="Get your free API key at https://uts.nlm.nih.gov/uts/profile",
+        placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+        key="crosswalk_api_key"
+    )
+    
+    if api_key_input:
+        if validate_api_key(api_key_input):
+            st.success("✓ API key valid", icon="✅")
+            api_key = api_key_input
+        else:
+            st.error("Invalid API key. Check your UTS profile.")
+            st.stop()
+    else:
+        st.info("👆 Enter your UMLS API key to get started. [Get one here →](https://uts.nlm.nih.gov/uts/profile)")
+        st.stop()
+    
+    # Step 2: Source & Target
+    st.markdown("""
+    <div class="step-header">
+        <div class="step-number">2</div>
+        <div class="step-title">Select Source & Target Vocabularies</div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        source_label = st.selectbox(
+            "📖 Source Vocabulary (what you have)",
+            options=list(VOCAB_OPTIONS.keys()),
+            index=0,
+            key="crosswalk_source"
+        )
+        source_vocab = VOCAB_OPTIONS[source_label]
+    
+    with col2:
+        target_options = {k: v for k, v in VOCAB_OPTIONS.items() if v != source_vocab}
+        target_label = st.selectbox(
+            "🎯 Target Vocabulary (what you want)",
+            options=list(target_options.keys()),
+            index=list(target_options.keys()).index("SNOMED CT (US Edition)") 
+                  if "SNOMED CT (US Edition)" in target_options else 0,
+            key="crosswalk_target"
+        )
+        target_vocab = target_options[target_label]
+    
+    st.markdown(f"**Mapping:** `{source_vocab}` → `{target_vocab}`")
+    
+    # Step 3: Upload
+    st.markdown("""
+    <div class="step-header">
+        <div class="step-number">3</div>
+        <div class="step-title">Upload CSV</div>
     </div>
     """, unsafe_allow_html=True)
     
     uploaded_file = st.file_uploader(
-        "Choose a CSV file",
+        "Choose a CSV file containing your codes",
         type=["csv"],
         help="Max recommended: ~5,000 rows (API rate limits apply)"
     )
 
-    if uploaded_file is not None:
-        try:
-            df = pd.read_csv(uploaded_file)
-        except Exception as e:
-            st.error(f"Could not parse CSV: {e}")
-            st.stop()
+    if uploaded_file is None:
+        st.info("👆 Upload a CSV file with a column of medical codes")
         
-        st.markdown(f"**Preview** — {len(df):,} rows × {len(df.columns)} columns")
-        st.dataframe(df.head(10), use_container_width=True, height=280)
+        # Show example at bottom
+        with st.expander("📋 See supported crosswalk paths"):
+            paths = [
+                ("ICD-9-CM", "→", "ICD-10-CM", "Diagnosis migration"),
+                ("ICD-10-CM", "→", "SNOMED CT", "Clinical ↔ billing bridge"),
+                ("SNOMED CT", "→", "ICD-10-CM", "EHR to claims"),
+                ("CPT", "→", "SNOMED CT", "Procedure mapping"),
+                ("LOINC", "→", "SNOMED CT", "Lab observation mapping"),
+                ("RxNorm", "→", "NDC", "Drug code mapping"),
+            ]
+            path_df = pd.DataFrame(paths, columns=["Source", "", "Target", "Use Case"])
+            st.dataframe(path_df, use_container_width=True, hide_index=True)
+        st.stop()
+    
+    try:
+        df = pd.read_csv(uploaded_file)
+    except Exception as e:
+        st.error(f"Could not parse CSV: {e}")
+        st.stop()
+    
+    # Step 4: Select code column
+    st.markdown("""
+    <div class="step-header">
+        <div class="step-number">4</div>
+        <div class="step-title">Select Code Column</div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        code_column = st.selectbox(
+            "Which column contains the source codes?",
+            options=df.columns.tolist(),
+            help="Select the column with ICD, SNOMED, LOINC, etc. codes"
+        )
+    with col2:
+        unique_codes = df[code_column].dropna().nunique()
+        st.metric("Unique codes", f"{unique_codes:,}")
+    
+    sample_codes = df[code_column].dropna().unique()[:3]
+    st.caption(f"Sample codes from `{code_column}`: `{'`, `'.join(str(c) for c in sample_codes)}`")
+
+    
+    # Step 5: Run
+    st.markdown("""
+    <div class="step-header">
+        <div class="step-number">5</div>
+        <div class="step-title">Run Crosswalk</div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("""
+    <div class="disclaimer">
+        ⚠️ <strong>Disclaimer:</strong> UMLS crosswalk mappings are based on CUI synonymy and have 
+        <em>not been rigorously tested in clinical care</em>. Review results before use in production.
+    </div>
+    """, unsafe_allow_html=True)
+    
+    run_button = st.button(
+        "🚀 Start Crosswalk",
+        type="primary",
+        use_container_width=True,
+    )
+    
+    if run_button:
+        codes = df[code_column].astype(str).tolist()
+        unique_list = list(dict.fromkeys(codes))
         
-        col1, col2 = st.columns(2)
-        with col1:
-            code_column = st.selectbox(
-                "Which column contains the source codes?",
-                options=df.columns.tolist(),
-                help="Select the column that holds ICD, SNOMED, LOINC (etc.) codes"
-            )
-        with col2:
-            st.markdown(f"**Mapping direction:**")
-            st.markdown(f"`{source_vocab}` → `{target_vocab}`")
-            unique_codes = df[code_column].dropna().nunique()
-            st.markdown(f"Unique codes to map: **{unique_codes:,}**")
+        st.markdown(f"Processing **{len(unique_list):,}** unique codes ({len(codes):,} total rows)…")
         
-        sample_codes = df[code_column].dropna().unique()[:5]
-        st.markdown(f"Sample codes: `{'`, `'.join(str(c) for c in sample_codes)}`")
+        progress_bar = st.progress(0, text="Starting…")
+        status_text = st.empty()
         
-        st.markdown("""
-        <div class="disclaimer">
-            ⚠️ <strong>Important:</strong> UMLS crosswalk mappings are based on CUI synonymy and have 
-            <em>not been rigorously tested in clinical care</em>. Results should be reviewed by a qualified 
-            coding professional before use in billing, clinical, or regulatory workflows.
+        start_time = time.time()
+        raw_results = process_batch(
+            api_key, source_vocab, target_vocab,
+            unique_list, progress_bar, status_text
+        )
+        elapsed = time.time() - start_time
+        
+        progress_bar.progress(1.0, text="Complete!")
+        
+        lookup = dict(zip(unique_list, raw_results))
+        
+        out_rows = []
+        mapped_count = 0
+        unmapped_count = 0
+        multi_map_count = 0
+        
+        for _, row in df.iterrows():
+            code = str(row[code_column]).strip()
+            result = lookup.get(code, {"error": "Not processed"})
+            
+            if "results" in result and result["results"]:
+                mappings = result["results"]
+                if len(mappings) > 1:
+                    multi_map_count += 1
+                mapped_count += 1
+                for m in mappings:
+                    out_row = row.to_dict()
+                    out_row["target_code"] = m["target_code"]
+                    out_row["target_name"] = m["target_name"]
+                    out_row["target_vocabulary"] = m["target_vocab"]
+                    out_row["mapping_status"] = "mapped"
+                    out_row["is_obsolete"] = m["obsolete"]
+                    out_rows.append(out_row)
+            else:
+                unmapped_count += 1
+                out_row = row.to_dict()
+                out_row["target_code"] = ""
+                out_row["target_name"] = ""
+                out_row["target_vocabulary"] = target_vocab
+                out_row["mapping_status"] = result.get("error", "unmapped")
+                out_row["is_obsolete"] = False
+                out_rows.append(out_row)
+        
+        result_df = pd.DataFrame(out_rows)
+        
+        st.session_state["result_df"] = result_df
+        st.session_state["stats"] = {
+            "mapped": mapped_count,
+            "unmapped": unmapped_count,
+            "multi": multi_map_count,
+            "total": len(codes),
+            "unique": len(unique_list),
+            "elapsed": elapsed,
+            "output_rows": len(result_df),
+        }
+    
+    if "result_df" in st.session_state:
+        result_df = st.session_state["result_df"]
+        stats = st.session_state["stats"]
+        
+        st.markdown("---")
+        st.markdown("### 📊 Crosswalk Complete!")
+        
+        map_rate = (stats["mapped"] / stats["unique"] * 100) if stats["unique"] > 0 else 0
+        st.markdown(f"""
+        <div class="metric-row">
+            <div class="metric-card">
+                <div class="value">{stats['unique']:,}</div>
+                <div class="label">Unique Codes</div>
+            </div>
+            <div class="metric-card">
+                <div class="value">{stats['mapped']:,}</div>
+                <div class="label">Mapped ✓</div>
+            </div>
+            <div class="metric-card">
+                <div class="value">{stats['unmapped']:,}</div>
+                <div class="label">Unmapped</div>
+            </div>
+            <div class="metric-card">
+                <div class="value">{map_rate:.1f}%</div>
+                <div class="label">Map Rate</div>
+            </div>
+            <div class="metric-card">
+                <div class="value">{stats['elapsed']:.1f}s</div>
+                <div class="label">Elapsed</div>
+            </div>
         </div>
         """, unsafe_allow_html=True)
         
-        if not api_key:
-            st.warning("Enter your UMLS API key in the sidebar to proceed.")
-            st.stop()
+        if stats["multi"] > 0:
+            st.info(
+                f"ℹ️ {stats['multi']} codes had **1-to-many** mappings. "
+                f"Output has {stats['output_rows']:,} rows (expanded from {stats['total']:,} input rows)."
+            )
         
-        run_button = st.button(
-            "🚀 Start Crosswalk",
-            type="primary",
+        st.markdown("#### 👁 Preview Results")
+        tab_all, tab_mapped, tab_unmapped = st.tabs(["All Results", "Mapped Only", "Unmapped Only"])
+        
+        with tab_all:
+            st.dataframe(result_df.head(100), use_container_width=True, height=250)
+            st.caption(f"Showing first 100 of {len(result_df):,} rows")
+        with tab_mapped:
+            mapped_df = result_df[result_df["mapping_status"] == "mapped"]
+            st.dataframe(mapped_df.head(100), use_container_width=True, height=250)
+            st.caption(f"Showing first 100 of {len(mapped_df):,} mapped rows")
+        with tab_unmapped:
+            unmapped_df = result_df[result_df["mapping_status"] != "mapped"]
+            st.dataframe(unmapped_df.head(100), use_container_width=True, height=250)
+            st.caption(f"Showing first 100 of {len(unmapped_df):,} unmapped rows")
+        
+        st.markdown("### 📥 Download Results")
+        
+        col_a, col_b, col_c = st.columns(3)
+        
+        csv_all = result_df.to_csv(index=False)
+        col_a.download_button(
+            label="⬇ All Results (CSV)",
+            data=csv_all,
+            file_name=f"crosswalk_{source_vocab}_to_{target_vocab}_all.csv",
+            mime="text/csv",
             use_container_width=True,
         )
         
-        if run_button:
-            codes = df[code_column].astype(str).tolist()
-            unique_list = list(dict.fromkeys(codes))
-            
-            st.markdown(f"Processing **{len(unique_list):,}** unique codes ({len(codes):,} total rows)…")
-            
-            progress_bar = st.progress(0, text="Starting…")
-            status_text = st.empty()
-            
-            start_time = time.time()
-            raw_results = process_batch(
-                api_key, source_vocab, target_vocab,
-                unique_list, progress_bar, status_text
-            )
-            elapsed = time.time() - start_time
-            
-            progress_bar.progress(1.0, text="Complete!")
-            
-            lookup = dict(zip(unique_list, raw_results))
-            
-            out_rows = []
-            mapped_count = 0
-            unmapped_count = 0
-            multi_map_count = 0
-            
-            for _, row in df.iterrows():
-                code = str(row[code_column]).strip()
-                result = lookup.get(code, {"error": "Not processed"})
-                
-                if "results" in result and result["results"]:
-                    mappings = result["results"]
-                    if len(mappings) > 1:
-                        multi_map_count += 1
-                    mapped_count += 1
-                    for m in mappings:
-                        out_row = row.to_dict()
-                        out_row["target_code"] = m["target_code"]
-                        out_row["target_name"] = m["target_name"]
-                        out_row["target_vocabulary"] = m["target_vocab"]
-                        out_row["mapping_status"] = "mapped"
-                        out_row["is_obsolete"] = m["obsolete"]
-                        out_rows.append(out_row)
-                else:
-                    unmapped_count += 1
-                    out_row = row.to_dict()
-                    out_row["target_code"] = ""
-                    out_row["target_name"] = ""
-                    out_row["target_vocabulary"] = target_vocab
-                    out_row["mapping_status"] = result.get("error", "unmapped")
-                    out_row["is_obsolete"] = False
-                    out_rows.append(out_row)
-            
-            result_df = pd.DataFrame(out_rows)
-            
-            st.session_state["result_df"] = result_df
-            st.session_state["stats"] = {
-                "mapped": mapped_count,
-                "unmapped": unmapped_count,
-                "multi": multi_map_count,
-                "total": len(codes),
-                "unique": len(unique_list),
-                "elapsed": elapsed,
-                "output_rows": len(result_df),
-            }
-        
-        if "result_df" in st.session_state:
-            result_df = st.session_state["result_df"]
-            stats = st.session_state["stats"]
-            
-            st.markdown("### Results & Export")
-            
-            map_rate = (stats["mapped"] / stats["unique"] * 100) if stats["unique"] > 0 else 0
-            st.markdown(f"""
-            <div class="metric-row">
-                <div class="metric-card">
-                    <div class="value">{stats['unique']:,}</div>
-                    <div class="label">Unique Codes</div>
-                </div>
-                <div class="metric-card">
-                    <div class="value">{stats['mapped']:,}</div>
-                    <div class="label">Mapped ✓</div>
-                </div>
-                <div class="metric-card">
-                    <div class="value">{stats['unmapped']:,}</div>
-                    <div class="label">Unmapped</div>
-                </div>
-                <div class="metric-card">
-                    <div class="value">{map_rate:.1f}%</div>
-                    <div class="label">Map Rate</div>
-                </div>
-                <div class="metric-card">
-                    <div class="value">{stats['elapsed']:.1f}s</div>
-                    <div class="label">Elapsed</div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            if stats["multi"] > 0:
-                st.info(
-                    f"ℹ️ {stats['multi']} codes had **1-to-many** mappings. "
-                    f"Output has {stats['output_rows']:,} rows (expanded from {stats['total']:,} input rows)."
-                )
-            
-            tab_all, tab_mapped, tab_unmapped = st.tabs(["All Results", "Mapped Only", "Unmapped Only"])
-            
-            with tab_all:
-                st.dataframe(result_df, use_container_width=True, height=400)
-            with tab_mapped:
-                mapped_df = result_df[result_df["mapping_status"] == "mapped"]
-                st.dataframe(mapped_df, use_container_width=True, height=400)
-            with tab_unmapped:
-                unmapped_df = result_df[result_df["mapping_status"] != "mapped"]
-                st.dataframe(unmapped_df, use_container_width=True, height=400)
-            
-            st.markdown("### 📥 Download Results")
-            
-            col_a, col_b, col_c = st.columns(3)
-            
-            csv_all = result_df.to_csv(index=False)
-            col_a.download_button(
-                label="⬇ All Results (CSV)",
-                data=csv_all,
-                file_name=f"crosswalk_{source_vocab}_to_{target_vocab}_all.csv",
-                mime="text/csv",
-                use_container_width=True,
-            )
-            
-            csv_mapped = result_df[result_df["mapping_status"] == "mapped"].to_csv(index=False)
-            col_b.download_button(
-                label="⬇ Mapped Only (CSV)",
-                data=csv_mapped,
-                file_name=f"crosswalk_{source_vocab}_to_{target_vocab}_mapped.csv",
-                mime="text/csv",
-                use_container_width=True,
-            )
-            
-            csv_unmapped = result_df[result_df["mapping_status"] != "mapped"].to_csv(index=False)
-            col_c.download_button(
-                label="⬇ Unmapped Only (CSV)",
-                data=csv_unmapped,
-                file_name=f"crosswalk_{source_vocab}_to_{target_vocab}_unmapped.csv",
-                mime="text/csv",
-                use_container_width=True,
-            )
-
-    else:
-        st.markdown("### Supported Crosswalk Paths")
-        st.markdown(
-            "The UMLS Metathesaurus links **200+ vocabularies** via Concept Unique Identifiers (CUIs). "
-            "Any pair of vocabularies that share CUIs can be crosswalked."
+        csv_mapped = result_df[result_df["mapping_status"] == "mapped"].to_csv(index=False)
+        col_b.download_button(
+            label="⬇ Mapped Only (CSV)",
+            data=csv_mapped,
+            file_name=f"crosswalk_{source_vocab}_to_{target_vocab}_mapped.csv",
+            mime="text/csv",
+            use_container_width=True,
         )
         
-        paths = [
-            ("ICD-9-CM", "→", "ICD-10-CM", "Diagnosis migration"),
-            ("ICD-10-CM", "→", "SNOMED CT", "Clinical ↔ billing bridge"),
-            ("SNOMED CT", "→", "ICD-10-CM", "EHR to claims"),
-            ("CPT", "→", "SNOMED CT", "Procedure mapping"),
-            ("LOINC", "→", "SNOMED CT", "Lab observation mapping"),
-            ("RxNorm", "→", "NDC", "Drug code mapping"),
-        ]
-        
-        path_df = pd.DataFrame(paths, columns=["Source", "", "Target", "Use Case"])
-        st.dataframe(path_df, use_container_width=True, hide_index=True)
+        csv_unmapped = result_df[result_df["mapping_status"] != "mapped"].to_csv(index=False)
+        col_c.download_button(
+            label="⬇ Unmapped Only (CSV)",
+            data=csv_unmapped,
+            file_name=f"crosswalk_{source_vocab}_to_{target_vocab}_unmapped.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -561,13 +582,25 @@ with tab2:
     st.markdown("""
     <div class="info-box">
         Build value sets by exploring UMLS hierarchies. Search for a concept, navigate up/down 
-        the tree, and check concepts to include them in your value set. Supports SNOMED CT, 
-        ICD-10-CM, LOINC, and other hierarchical vocabularies.
+        the tree, and check concepts to include them in your value set.
     </div>
     """, unsafe_allow_html=True)
     
-    if not api_key:
-        st.warning("Enter your UMLS API key in the sidebar to proceed.")
+    # API key for value set builder
+    api_key_vs = st.text_input(
+        "UMLS API Key",
+        type="password",
+        help="Get your free API key at https://uts.nlm.nih.gov/uts/profile",
+        placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+        key="valueset_api_key"
+    )
+    
+    if not api_key_vs:
+        st.info("👆 Enter your UMLS API key to search and build value sets. [Get one here →](https://uts.nlm.nih.gov/uts/profile)")
+        st.stop()
+    
+    if not validate_api_key(api_key_vs):
+        st.error("Invalid API key. Check your UTS profile.")
         st.stop()
     
     # Initialize session state
@@ -600,7 +633,7 @@ with tab2:
                 with st.spinner("Searching UMLS…"):
                     url = f"{UMLS_BASE}/search/current"
                     params = {
-                        "apiKey": api_key,
+                        "apiKey": api_key_vs,
                         "string": search_term,
                         "sabs": search_vocab_code,
                         "returnIdType": "code",
@@ -655,7 +688,7 @@ with tab2:
             with col1:
                 if st.button("⬆️ Show Parents", use_container_width=True):
                     url = f"{UMLS_BASE}/content/current/source/{current_vocab}/{current_code}/parents"
-                    params = {"apiKey": api_key, "pageSize": 50}
+                    params = {"apiKey": api_key_vs, "pageSize": 50}
                     try:
                         resp = requests.get(url, params=params, timeout=30)
                         if resp.status_code == 200:
@@ -669,7 +702,7 @@ with tab2:
             with col2:
                 if st.button("⬇️ Show Children", use_container_width=True):
                     url = f"{UMLS_BASE}/content/current/source/{current_vocab}/{current_code}/children"
-                    params = {"apiKey": api_key, "pageSize": 50}
+                    params = {"apiKey": api_key_vs, "pageSize": 50}
                     try:
                         resp = requests.get(url, params=params, timeout=30)
                         if resp.status_code == 200:
