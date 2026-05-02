@@ -299,16 +299,9 @@ with tab1:
         key="crosswalk_api_key"
     )
     
-    if api_key_input:
-        if validate_api_key(api_key_input):
-            st.success("✓ API key valid", icon="✅")
-            api_key = api_key_input
-        else:
-            st.error("Invalid API key. Check your UTS profile.")
-            st.stop()
-    else:
-        st.info("👆 Enter your UMLS API key to get started. [Get one here →](https://uts.nlm.nih.gov/uts/profile)")
-        st.stop()
+    if not api_key_input:
+        st.info("👆 Enter your UMLS API key to run crosswalks. [Get one free here →](https://uts.nlm.nih.gov/uts/profile)")
+    # Don't validate or stop here - let them see the whole interface first
     
     # Step 2: Source & Target
     st.markdown("""
@@ -423,6 +416,18 @@ with tab1:
     )
     
     if run_button:
+        # Validate API key NOW (when button is clicked)
+        if not api_key_input:
+            st.error("❌ Please enter your UMLS API key in Step 1")
+            st.stop()
+        
+        with st.spinner("Validating API key..."):
+            if not validate_api_key(api_key_input):
+                st.error("❌ Invalid API key. Please check your UTS profile and try again.")
+                st.stop()
+        
+        st.success("✅ API key valid - starting crosswalk...")
+        
         codes = df[code_column].astype(str).tolist()
         unique_list = list(dict.fromkeys(codes))
         
@@ -433,7 +438,7 @@ with tab1:
         
         start_time = time.time()
         raw_results = process_batch(
-            api_key, source_vocab, target_vocab,
+            api_key_input, source_vocab, target_vocab,
             unique_list, progress_bar, status_text
         )
         elapsed = time.time() - start_time
