@@ -581,10 +581,13 @@ with tab1:
 
 # ═══════════════════════════════════════════════════════════════════════════
 # TAB 2: VALUE SET BUILDER
+
+# ═══════════════════════════════════════════════════════════════════════════
+# TAB 2: VALUE SET BUILDER
 # ═══════════════════════════════════════════════════════════════════════════
 
 with tab2:
-    st.success("✅ TAB 2 IS RENDERING - VERSION 2.1 - May 2nd 2026")
+    st.success("✅ Value Set Builder loaded")
     
     st.markdown("""
     <div class="info-box">
@@ -592,13 +595,17 @@ with tab2:
         Perfect for creating cohorts, inclusion criteria, or standardized code lists.
     </div>
     """, unsafe_allow_html=True)
-    
+
     # Initialize session state
     if "value_set" not in st.session_state:
         st.session_state["value_set"] = []
     if "vs_name" not in st.session_state:
         st.session_state["vs_name"] = ""
-    
+    if "search_results" not in st.session_state:
+        st.session_state["search_results"] = []
+    if "current_code" not in st.session_state:
+        st.session_state["current_code"] = None
+
     # Step 1: API Key
     st.markdown("""
     <div class="step-header">
@@ -606,7 +613,7 @@ with tab2:
         <div class="step-title">Enter API Key</div>
     </div>
     """, unsafe_allow_html=True)
-    
+
     api_key_vs = st.text_input(
         "UMLS API Key",
         type="password",
@@ -614,11 +621,10 @@ with tab2:
         placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
         key="valueset_api_key"
     )
-    
+
     if not api_key_vs:
         st.info("👆 Enter your UMLS API key to search and build value sets. [Get one free here →](https://uts.nlm.nih.gov/uts/profile)")
-    # Don't stop - show the interface
-    
+
     # Step 2: Name your value set
     st.markdown("""
     <div class="step-header">
@@ -626,18 +632,17 @@ with tab2:
         <div class="step-title">Name Your Value Set</div>
     </div>
     """, unsafe_allow_html=True)
-    
+
     vs_name = st.text_input(
         "Value Set Name",
-        value=st.session_state.get("vs_name", ""),
         placeholder="e.g., Antibiotics, Diabetes Diagnoses, Cardiac Procedures",
         help="Give your value set a descriptive name",
         key="vs_name_input"
     )
-    
-    if vs_name and vs_name != st.session_state.get("vs_name", ""):
+
+    if vs_name:
         st.session_state["vs_name"] = vs_name
-    
+
     # Step 3: Search & Add Concepts
     st.markdown("""
     <div class="step-header">
@@ -645,295 +650,250 @@ with tab2:
         <div class="step-title">Search & Add Concepts</div>
     </div>
     """, unsafe_allow_html=True)
-    
-    col1, col2 = st.columns([3, 2])
-    
-    with col1:
-        # Vocabulary selector
-        search_vocab = st.selectbox(
-            "Vocabulary",
-            options=list(VOCAB_OPTIONS.keys()),
-            index=list(VOCAB_OPTIONS.keys()).index("SNOMED CT (US Edition)"),
-            key="vs_vocab"
-        )
-        search_vocab_code = VOCAB_OPTIONS[search_vocab]
-        
-        # Search box
-        search_term = st.text_input(
-            "Search for a concept",
-            placeholder="e.g., amoxicillin, type 2 diabetes, hypertension",
-            key="vs_search"
-        )
-        
-        if st.button("🔎 Search", type="primary", use_container_width=True):
-            if not api_key_vs:
-                st.error("❌ Please enter your API key in Step 1")
-            elif not search_term:
-                st.warning("Please enter a search term")
-            else:
-                # Validate API key on search
-                with st.spinner("Validating API key..."):
-                    if not validate_api_key(api_key_vs):
+
+    # Vocabulary selector
+    search_vocab_label = st.selectbox(
+        "Vocabulary",
+        options=list(VOCAB_OPTIONS.keys()),
+        index=list(VOCAB_OPTIONS.keys()).index("SNOMED CT (US Edition)"),
+        key="vs_vocab"
+    )
+    search_vocab_code = VOCAB_OPTIONS[search_vocab_label]
+
+    # Search box
+    search_term = st.text_input(
+        "Search for a concept",
+        placeholder="e.g., amoxicillin, type 2 diabetes, hypertension",
+        key="vs_search"
+    )
+
+    if st.button("🔎 Search", type="primary", use_container_width=True, key="vs_search_btn"):
+        if not api_key_vs:
+            st.error("❌ Please enter your API key in Step 1")
+        elif not search_term:
+            st.warning("Please enter a search term")
+        else:
+            with st.spinner("Searching UMLS…"):
+                url = f"{UMLS_BASE}/search/current"
+                params = {
+                    "apiKey": api_key_vs,
+                    "string": search_term,
+                    "sabs": search_vocab_code,
+                    "returnIdType": "code",
+                    "pageSize": 20,
+                }
+                try:
+                    resp = requests.get(url, params=params, timeout=30)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        results = data.get("result", {}).get("results", [])
+                        if results:
+                            st.session_state["search_results"] = results
+                            st.session_state["current_code"] = None
+                        else:
+                            st.session_state["search_results"] = []
+                            st.info("No results found")
+                    elif resp.status_code == 401:
                         st.error("❌ Invalid API key. Please check your UTS profile.")
-                        # Don't stop - let the interface continue to show
                     else:
-                        # Only search if API key is valid
-                        with st.spinner("Searching UMLS…"):
-                            url = f"{UMLS_BASE}/search/current"
-                            params = {
-                                "apiKey": api_key_vs,
-                                "string": search_term,
-                                "sabs": search_vocab_code,
-                                "returnIdType": "code",
-                                "pageSize": 20,
-                            }
-                            try:
-                                resp = requests.get(url, params=params, timeout=30)
-                                if resp.status_code == 200:
-                                    data = resp.json()
-                                    results = data.get("result", {}).get("results", [])
-                                    if results:
-                                        st.session_state["search_results"] = results
-                                        st.session_state["current_code"] = None  # Clear navigation
-                                    else:
-                                        st.info("No results found")
-                                else:
-                                    st.error(f"Search failed: HTTP {resp.status_code}")
-                            except Exception as e:
-                                st.error(f"Error: {e}")
-        
-        # Display search results
-        if "search_results" in st.session_state and not st.session_state.get("current_code"):
-            results = st.session_state["search_results"]
-            st.markdown(f"**Found {len(results)} concepts:**")
+                        st.error(f"Search failed: HTTP {resp.status_code}")
+                except Exception as e:
+                    st.error(f"Error: {e}")
+
+    # ─── Display search results ──────────────────────────────────────────────
+    if st.session_state["search_results"] and not st.session_state["current_code"]:
+        results = st.session_state["search_results"]
+        st.markdown(f"**Found {len(results)} concepts:**")
+
+        for r in results:
+            ui = r.get("ui", "")
+            name = r.get("name", "Unknown")
+            source = r.get("rootSource", search_vocab_code)
+            is_added = any(c["code"] == ui for c in st.session_state["value_set"])
+
+            col_a, col_b, col_c = st.columns([1, 5, 1])
             
-            for r in results:
-                ui = r.get("ui", "")
-                name = r.get("name", "Unknown")
-                source = r.get("rootSource", search_vocab_code)
+            with col_a:
+                add_clicked = st.checkbox(
+                    "Add", 
+                    key=f"add_{ui}", 
+                    value=is_added, 
+                    label_visibility="collapsed"
+                )
+                if add_clicked and not is_added:
+                    st.session_state["value_set"].append({
+                        "code": ui, "name": name, "vocab": source
+                    })
+                    st.rerun()
+                elif not add_clicked and is_added:
+                    st.session_state["value_set"] = [
+                        c for c in st.session_state["value_set"] if c["code"] != ui
+                    ]
+                    st.rerun()
+
+            with col_b:
+                st.markdown(f"**{name}**  \n`{ui}` • {source}")
+
+            with col_c:
+                if st.button("🔍", key=f"explore_{ui}", help="Explore hierarchy"):
+                    st.session_state["current_code"] = ui
+                    st.session_state["current_vocab"] = source
+                    st.session_state["current_name"] = name
+                    st.rerun()
+
+    # ─── Tree navigation ─────────────────────────────────────────────────────
+    if st.session_state.get("current_code"):
+        st.markdown("---")
+        st.markdown("### 🌳 Hierarchy Navigator")
+
+        current_code = st.session_state["current_code"]
+        current_vocab = st.session_state["current_vocab"]
+        current_name = st.session_state.get("current_name", current_code)
+
+        st.markdown(f"**Current concept:** {current_name} `{current_code}`")
+        
+        is_added = any(c["code"] == current_code for c in st.session_state["value_set"])
+        if not is_added:
+            if st.button("➕ Add this concept to value set", key=f"add_curr_{current_code}"):
+                st.session_state["value_set"].append({
+                    "code": current_code, "name": current_name, "vocab": current_vocab
+                })
+                st.rerun()
+        else:
+            st.success("✓ Already in value set")
+        
+        if st.button("← Back to search results", key="back_btn"):
+            st.session_state["current_code"] = None
+            st.rerun()
+
+        nav_col1, nav_col2 = st.columns(2)
+        with nav_col1:
+            if st.button("⬆️ Show Parents", use_container_width=True, key="show_parents"):
+                url = f"{UMLS_BASE}/content/current/source/{current_vocab}/{current_code}/parents"
+                params = {"apiKey": api_key_vs, "pageSize": 50}
+                try:
+                    resp = requests.get(url, params=params, timeout=30)
+                    if resp.status_code == 200:
+                        st.session_state["parents"] = resp.json().get("result", [])
+                    else:
+                        st.session_state["parents"] = []
+                except Exception:
+                    st.session_state["parents"] = []
+        
+        with nav_col2:
+            if st.button("⬇️ Show Children", use_container_width=True, key="show_children"):
+                url = f"{UMLS_BASE}/content/current/source/{current_vocab}/{current_code}/children"
+                params = {"apiKey": api_key_vs, "pageSize": 50}
+                try:
+                    resp = requests.get(url, params=params, timeout=30)
+                    if resp.status_code == 200:
+                        st.session_state["children"] = resp.json().get("result", [])
+                    else:
+                        st.session_state["children"] = []
+                except Exception:
+                    st.session_state["children"] = []
+
+        # Display parents
+        if st.session_state.get("parents"):
+            st.markdown("**Parents (broader concepts):**")
+            for p in st.session_state["parents"]:
+                ui = p.get("ui", "")
+                name = p.get("name", "Unknown")
+                is_added = any(c["code"] == ui for c in st.session_state["value_set"])
                 
-                col_a, col_b, col_c = st.columns([1, 5, 1])
-                
-                with col_a:
-                    # Add to value set checkbox
-                    is_added = any(c["code"] == ui for c in st.session_state["value_set"])
-                    if st.checkbox("", key=f"add_{ui}", value=is_added, label_visibility="collapsed"):
-                        if not is_added:
-                            st.session_state["value_set"].append({
-                                "code": ui,
-                                "name": name,
-                                "vocab": source
-                            })
-                            st.rerun()
-                    elif is_added:
+                pcol_a, pcol_b, pcol_c = st.columns([1, 5, 1])
+                with pcol_a:
+                    chk = st.checkbox("Add", key=f"chk_p_{ui}", value=is_added, label_visibility="collapsed")
+                    if chk and not is_added:
+                        st.session_state["value_set"].append({
+                            "code": ui, "name": name, "vocab": current_vocab
+                        })
+                        st.rerun()
+                    elif not chk and is_added:
                         st.session_state["value_set"] = [
                             c for c in st.session_state["value_set"] if c["code"] != ui
                         ]
                         st.rerun()
-                
-                with col_b:
-                    st.markdown(f"**{name}**  \n`{ui}` • {source}")
-                
-                with col_c:
-                    if st.button("🔍", key=f"explore_{ui}", help="Explore hierarchy"):
+                with pcol_b:
+                    st.markdown(f"↑ {name} `{ui}`")
+                with pcol_c:
+                    if st.button("→", key=f"nav_p_{ui}"):
                         st.session_state["current_code"] = ui
-                        st.session_state["current_vocab"] = source
                         st.session_state["current_name"] = name
                         st.rerun()
-        
-        # Tree navigation (when exploring a concept)
-        if st.session_state.get("current_code"):
-            st.markdown("---")
-            st.markdown("### 🌳 Hierarchy Navigator")
-            
-            current_code = st.session_state["current_code"]
-            current_vocab = st.session_state["current_vocab"]
-            current_name = st.session_state.get("current_name", current_code)
-            
-            # Current concept with add button
-            col_a, col_b, col_c = st.columns([1, 5, 1])
-            with col_a:
-                is_added = any(c["code"] == current_code for c in st.session_state["value_set"])
-                if st.checkbox("", key=f"add_current_{current_code}", value=is_added, label_visibility="collapsed"):
-                    if not is_added:
+
+        # Display children
+        if st.session_state.get("children"):
+            st.markdown("**Children (narrower concepts):**")
+            for ch in st.session_state["children"]:
+                ui = ch.get("ui", "")
+                name = ch.get("name", "Unknown")
+                is_added = any(c["code"] == ui for c in st.session_state["value_set"])
+                
+                ccol_a, ccol_b, ccol_c = st.columns([1, 5, 1])
+                with ccol_a:
+                    chk = st.checkbox("Add", key=f"chk_c_{ui}", value=is_added, label_visibility="collapsed")
+                    if chk and not is_added:
                         st.session_state["value_set"].append({
-                            "code": current_code,
-                            "name": current_name,
-                            "vocab": current_vocab
+                            "code": ui, "name": name, "vocab": current_vocab
                         })
                         st.rerun()
-                elif is_added:
-                    st.session_state["value_set"] = [
-                        c for c in st.session_state["value_set"] if c["code"] != current_code
-                    ]
-                    st.rerun()
-            with col_b:
-                st.markdown(f"**Current:** {current_name}  \n`{current_code}`")
-            with col_c:
-                if st.button("← Back", key="back_to_search"):
-                    st.session_state["current_code"] = None
-                    st.rerun()
-            
-            # Fetch parents/children
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("⬆️ Show Parents", use_container_width=True):
-                    if not api_key_vs or not validate_api_key(api_key_vs):
-                        st.error("Valid API key required")
-                    else:
-                        url = f"{UMLS_BASE}/content/current/source/{current_vocab}/{current_code}/parents"
-                        params = {"apiKey": api_key_vs, "pageSize": 50}
-                        try:
-                            resp = requests.get(url, params=params, timeout=30)
-                            if resp.status_code == 200:
-                                data = resp.json()
-                                st.session_state["parents"] = data.get("result", [])
-                            else:
-                                st.session_state["parents"] = []
-                        except Exception:
-                            st.session_state["parents"] = []
-            
-            with col2:
-                if st.button("⬇️ Show Children", use_container_width=True):
-                    if not api_key_vs or not validate_api_key(api_key_vs):
-                        st.error("Valid API key required")
-                    else:
-                        url = f"{UMLS_BASE}/content/current/source/{current_vocab}/{current_code}/children"
-                        params = {"apiKey": api_key_vs, "pageSize": 50}
-                        try:
-                            resp = requests.get(url, params=params, timeout=30)
-                            if resp.status_code == 200:
-                                data = resp.json()
-                                st.session_state["children"] = data.get("result", [])
-                            else:
-                                st.session_state["children"] = []
-                        except Exception:
-                            st.session_state["children"] = []
-            
-            # Display parents
-            if st.session_state.get("parents"):
-                st.markdown("**Parents (broader concepts):**")
-                for p in st.session_state["parents"]:
-                    ui = p.get("ui", "")
-                    name = p.get("name", "Unknown")
-                    col_a, col_b, col_c = st.columns([1, 5, 1])
-                    
-                    with col_a:
-                        is_added = any(c["code"] == ui for c in st.session_state["value_set"])
-                        if st.checkbox("", key=f"add_p_{ui}", value=is_added, label_visibility="collapsed"):
-                            if not is_added:
-                                st.session_state["value_set"].append({
-                                    "code": ui,
-                                    "name": name,
-                                    "vocab": current_vocab
-                                })
-                                st.rerun()
-                        elif is_added:
-                            st.session_state["value_set"] = [
-                                c for c in st.session_state["value_set"] if c["code"] != ui
-                            ]
-                            st.rerun()
-                    
-                    with col_b:
-                        st.markdown(f"↑ {name} `{ui}`")
-                    
-                    with col_c:
-                        if st.button("→", key=f"nav_p_{ui}"):
-                            st.session_state["current_code"] = ui
-                            st.session_state["current_name"] = name
-                            st.rerun()
-            
-            # Display children
-            if st.session_state.get("children"):
-                st.markdown("**Children (narrower concepts):**")
-                for c in st.session_state["children"]:
-                    ui = c.get("ui", "")
-                    name = c.get("name", "Unknown")
-                    col_a, col_b, col_c = st.columns([1, 5, 1])
-                    
-                    with col_a:
-                        is_added = any(x["code"] == ui for x in st.session_state["value_set"])
-                        if st.checkbox("", key=f"add_c_{ui}", value=is_added, label_visibility="collapsed"):
-                            if not is_added:
-                                st.session_state["value_set"].append({
-                                    "code": ui,
-                                    "name": name,
-                                    "vocab": current_vocab
-                                })
-                                st.rerun()
-                        elif is_added:
-                            st.session_state["value_set"] = [
-                                x for x in st.session_state["value_set"] if x["code"] != ui
-                            ]
-                            st.rerun()
-                    
-                    with col_b:
-                        st.markdown(f"↓ {name} `{ui}`")
-                    
-                    with col_c:
-                        if st.button("→", key=f"nav_c_{ui}"):
-                            st.session_state["current_code"] = ui
-                            st.session_state["current_name"] = name
-                            st.rerun()
-    
-    # Right column - Your Value Set
-    with col2:
-        st.markdown("### 📋 Your Value Set")
-        
-        value_set = st.session_state["value_set"]
-        
-        if value_set:
-            vs_display_name = st.session_state.get("vs_name", "Untitled Value Set")
-            st.markdown(f"**{vs_display_name}**")
-            st.caption(f"{len(value_set)} concept{'s' if len(value_set) != 1 else ''} added")
-            
-            # Show concepts
-            for i, item in enumerate(value_set):
-                col_a, col_b = st.columns([5, 1])
-                with col_a:
-                    st.markdown(f"""
-                    <div style="font-size: 0.85rem; padding: 0.25rem 0; border-bottom: 1px solid #d1fae5;">
-                        <strong>{item['name'][:50]}{'...' if len(item['name']) > 50 else ''}</strong><br>
-                        <code style="font-size: 0.75rem; color: #059669;">{item['code']}</code>
-                    </div>
-                    """, unsafe_allow_html=True)
-                with col_b:
-                    if st.button("✕", key=f"rm_{i}"):
-                        st.session_state["value_set"].pop(i)
+                    elif not chk and is_added:
+                        st.session_state["value_set"] = [
+                            c for c in st.session_state["value_set"] if c["code"] != ui
+                        ]
                         st.rerun()
-            
-            st.markdown("---")
-            
-            # Export
-            if st.button("Clear All", use_container_width=True):
-                st.session_state["value_set"] = []
-                st.rerun()
-            
-            vs_df = pd.DataFrame(value_set)
+                with ccol_b:
+                    st.markdown(f"↓ {name} `{ui}`")
+                with ccol_c:
+                    if st.button("→", key=f"nav_c_{ui}"):
+                        st.session_state["current_code"] = ui
+                        st.session_state["current_name"] = name
+                        st.rerun()
+
+    # ─── Your Value Set (full width below) ───────────────────────────────────
+    st.markdown("---")
+    st.markdown("### 📋 Your Value Set")
+    
+    value_set = st.session_state["value_set"]
+    
+    if value_set:
+        vs_display_name = st.session_state.get("vs_name") or "Untitled Value Set"
+        st.markdown(f"**{vs_display_name}** — {len(value_set)} concept{'s' if len(value_set) != 1 else ''}")
+        
+        # Display as dataframe
+        vs_df = pd.DataFrame(value_set)
+        st.dataframe(vs_df, use_container_width=True, hide_index=True)
+        
+        col_dl, col_clr = st.columns([3, 1])
+        
+        with col_dl:
             csv = vs_df.to_csv(index=False)
-            
-            filename = vs_display_name.lower().replace(" ", "_") if vs_display_name else "value_set"
-            filename = "".join(c for c in filename if c.isalnum() or c == "_")  # sanitize
-            
+            filename = vs_display_name.lower().replace(" ", "_")
+            filename = "".join(c for c in filename if c.isalnum() or c == "_")
             st.download_button(
-                label="⬇ Download Value Set (CSV)",
+                label=f"⬇ Download {vs_display_name} (CSV)",
                 data=csv,
-                file_name=f"{filename}.csv",
+                file_name=f"{filename or 'value_set'}.csv",
                 mime="text/csv",
                 use_container_width=True,
+                key="download_vs"
             )
-        else:
-            st.info("No concepts added yet. Search and explore to build your value set.")
-            
-            # Example
-            with st.expander("💡 Example: Building an Antibiotics value set"):
-                st.markdown("""
-                1. Enter "amoxicillin" in search
-                2. Check concepts to add them
-                3. Click 🔍 to explore hierarchy
-                4. Navigate to parent "Penicillins"
-                5. Show children to see related antibiotics
-                6. Add all relevant drugs
-                7. Name it "Antibiotics Value Set"
-                8. Download CSV
-                """)
+        
+        with col_clr:
+            if st.button("🗑 Clear All", use_container_width=True, key="clear_vs"):
+                st.session_state["value_set"] = []
+                st.rerun()
+    else:
+        st.info("No concepts added yet. Search above and check the boxes to build your value set.")
+        
+        with st.expander("💡 Example: Building an Antibiotics value set"):
+            st.markdown("""
+            1. Name it "Antibiotics"
+            2. Search for "amoxicillin"
+            3. Check concepts to add them
+            4. Click 🔍 to explore hierarchy
+            5. Show Parents/Children to find related drugs
+            6. Add all relevant drugs
+            7. Download CSV
+            """)
