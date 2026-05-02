@@ -1,0 +1,13 @@
+patient_id,source_code,description
+P001,E11.9,Type 2 diabetes mellitus without complications
+P002,I10,Essential hypertension
+P003,J06.9,Acute upper respiratory infection unspecified
+P004,M54.5,Low back pain
+P005,J45.909,Unspecified asthma uncomplicated
+P006,E78.5,Hyperlipidemia unspecified
+P007,F32.9,Major depressive disorder single episode unspecified
+P008,K21.0,Gastro-esophageal reflux disease with esophagitis
+P009,N39.0,Urinary tract infection site not specified
+P010,G43.909,Migraine unspecified not intractable
+P011,250.00,Diabetes mellitus type II
+P012,401.9,Unspecified essential hypertension
